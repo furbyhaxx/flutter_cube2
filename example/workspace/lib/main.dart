@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cube/flutter_cube.dart';
 
+import 'controls/workspace_controls.dart';
+import 'dart:math' as math;
+
 void main() {
   runApp(const MyApp());
 }
@@ -32,17 +35,7 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class Position {
-  double x;
-  double y;
-  double z;
 
-  Position([this.x = 0, this.y = 0, this.z = 0]);
-
-  Position copyWith({double? x, double? y, double? z}) {
-    return Position(x ?? this.x, y ?? this.y, z ?? this.z);
-  }
-}
 
 class _MyHomePageState extends State<MyHomePage>
     with SingleTickerProviderStateMixin {
@@ -61,10 +54,13 @@ class _MyHomePageState extends State<MyHomePage>
   double zoomFactor = 0.1;
 
   // mouse
-  Position mousePosition = Position();
   bool primaryButtonDown = false;
   bool secondaryButtonDown = false;
   bool tertiaryButtonDown = false;
+
+  // How far you can zoom in and out ( OrthographicCamera only )
+  final double minZoom = 0;
+  final double maxZoom = double.infinity;
 
 
   void generateGroundPlaneObject(Object parent) async {
@@ -74,24 +70,46 @@ class _MyHomePageState extends State<MyHomePage>
     parent.add(Object(name: 'GroundPlane', mesh: mesh, backfaceCulling: false));
   }
 
-  void _zoom(double value) {
+  void _zoom(Offset offset) {
     setState(() {
-      print("zoom old = " + _scene.camera.zoom.toString());
-      print("zoom value = " + value.toString());
-      double zoomNew = _scene.camera.zoom;
-      if (_scene.camera.zoom < 1.5) {
-        zoomNew += value * (zoomFactor * 0.1);
-      } else {
-        zoomNew += value * zoomFactor;
-      }
-      print("zoomNew = " + zoomNew.toString());
-      _scene.camera.zoom = zoomNew < 0 ? 0 : zoomNew;
-      print("zoom new = " + _scene.camera.zoom.toString());
+
+      final double zoomValue = offset.dy * zoomFactor;
+
+      double newZoom = math.max(minZoom, math.min(maxZoom, _scene.camera.zoom += zoomValue));
+
+      _scene.camera.zoom = newZoom;
+
+      // debugPrint("current zoom: $newZoom");
+
+      //
+      // print("zoom old = " + _scene.camera.zoom.toString());
+      // print("zoom value = " + value.toString());
+      // double zoomNew = _scene.camera.zoom;
+      // if (_scene.camera.zoom < 1.5) {
+      //   zoomNew += value * (zoomFactor * 0.1);
+      // } else {
+      //   zoomNew += value * zoomFactor;
+      // }
+      // print("zoomNew = " + zoomNew.toString());
+      // _scene.camera.zoom = zoomNew < 0 ? 0 : zoomNew;
+      // print("zoom new = " + _scene.camera.zoom.toString());
     });
   }
 
-  void _onSceneCreated(Scene scene) {
+  void _pan(Offset offset) {
+    setState(() {
+
+
+      final Vector3 panValue = Vector3(offset.dx, offset.dy, _scene.camera.target.z);
+
+      panValue.copyInto(_scene.camera.target);
+    });
+  }
+
+  void _initScene(Scene scene) {
     _scene = scene;
+
+    // setup camera
     scene.camera.position.x = cameraPosition.x;
     scene.camera.position.y = cameraPosition.y;
     scene.camera.position.z = cameraPosition.z;
@@ -99,12 +117,13 @@ class _MyHomePageState extends State<MyHomePage>
     scene.camera.target.y = cameraTarget.y;
     scene.camera.target.z = cameraTarget.z;
 
-    generateGroundPlaneObject(scene.world);
+    // generateGroundPlaneObject(scene.world);
 
     _cube = Object(
-      scale: Vector3(1.0, 1.0, 1.0),
+      scale: Vector3(10.0, 10.0, 10.0),
       backfaceCulling: false,
-      fileName: 'assets/workspace/w20.obj',
+      // fileName: 'assets/workspace/w20.obj',
+      fileName: 'assets/workspace/bunny.obj',
       // fileName: 'assets/workspace/w20_ascii.stl',
     );
     scene.light.position.setFrom(Vector3(0, 10, 10));
@@ -120,88 +139,51 @@ class _MyHomePageState extends State<MyHomePage>
       appBar: AppBar(
         title: Text(widget.title),
       ),
-      body: Center(
-        child: Column(
+      body: WorkspaceControls.orbit(
+        onPan: (offset) {
+          debugPrint("pan: " + offset.toString());
+          _pan(offset);
+        },
+        onRotate: (offset) {
+          // print("rotate: " + offset.toString());
+          setState(() {
+            print(offset);
+            // _angle += (offset.dy * 0.1);
+          });
+        },
+        onZoom: (offset) {_zoom(offset);},
+        // onZoom: (offset) {
+        //   // print("zoom: " + offset.toString());
+        //   setState(() {
+        //     // _zoom += (offset.dy * 0.1);
+        //     _scene.camera.zoom
+        //   });
+        // },
+        child: Stack(
           children: [
-            Expanded(
-              // child: Cube(
-              //   onSceneCreated: _onSceneCreated,
-              // ),
-              child: MouseRegion(
-                onHover: (PointerEvent details) {
-                  // x = details.position.dx;
-                  // y = details.position.dy;
-                  mousePosition.x = details.position.dx;
-                  mousePosition.y = details.position.dy;
-                  // print("hover");
-
-                  if(tertiaryButtonDown) {
-                    // pan
-                    print(details);
-                    print("pan");
-
-                  }
-                },
-                child: GestureDetector(
-                  // onTertiaryLongPressStart: (LongPressStartDetails details) {
-                  //   print(details);
-                  // },
-                  // onTertiaryLongPress: () {
-                  //   print('logn press');
-                  // },
-                  child: Listener(
-                    onPointerDown: (PointerDownEvent event) {
-                      switch (event.buttons) {
-                        case kPrimaryButton:
-                          primaryButtonDown = true;
-                          break;
-                        case kSecondaryButton:
-                          secondaryButtonDown = true;
-                          break;
-                        case kMiddleMouseButton:
-                          tertiaryButtonDown = true;
-                          print("middle down");
-                          break;
-                      }
-                      print(event.buttons);
-                    },
-                    onPointerCancel: (PointerCancelEvent event) {
-                      print("c:" + event.buttons.toString());
-                    },
-                    onPointerUp: (PointerUpEvent event) {
-                      print("upo");
-                      primaryButtonDown = false;
-                      secondaryButtonDown = false;
-                      tertiaryButtonDown = false;
-
-                    },
-                    onPointerSignal: (PointerSignalEvent event) {
-                      if (event is PointerScrollEvent) {
-                        // print('x: ${event.position.dx}, y: ${event.position.dy}');
-                        // print('scroll delta: ${event.scrollDelta}');
-                        PointerScrollEvent e = event as PointerScrollEvent;
-                        _zoom(event.scrollDelta.dy);
-                        // Offset
-                      }
-                      if(tertiaryButtonDown) {
-                        print(event);
-                      }
-                      // if(event is PointerDownEvent) {
-                      //   PointerDownEvent e = event as PointerDownEvent;
-                      //   print(e);
-                      // }
-                    },
-                    child: Cube(
-                      onSceneCreated: _onSceneCreated,
-                      interactive: false,
-                    ),
-                  ),
+            Positioned.fill(
+              child: Container(
+                decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Color(0xffaddeff),
+                        Colors.white,
+                      ],
+                      stops: [
+                        0.0,
+                        0.6,
+                      ],
+                    )
                 ),
               ),
             ),
-            Container(
-              color: Colors.grey,
-              height: 125,
+            Positioned.fill(
+                child: Cube(
+                  onSceneCreated: _initScene,
+                  interactive: false,
+                ),
             ),
           ],
         ),
@@ -242,7 +224,7 @@ class MouseScrollBehavior extends MaterialScrollBehavior {
   // Override behavior methods and getters like dragDevices
   @override
   Set<PointerDeviceKind> get dragDevices => {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-      };
+    PointerDeviceKind.touch,
+    PointerDeviceKind.mouse,
+  };
 }
